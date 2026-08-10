@@ -10,6 +10,7 @@ import {parseOfficialLayout, type KeyboardKey} from './via/layout';
 import {customKeycodeOptions, keycodeOptionsForProtocol, labelForKeycode, macroBasicKeyDictionary, macroKeycodeOptions, type KeycodeOption} from './via/keycodes';
 import {byteToKeyMap, parseMacroBytes, serializeMacroBytes, type MacroStep} from './via/macros';
 import {makeProfile, parseProfile, type LightingState} from './via/profile';
+import {changedLightingCommands} from './via/lighting';
 
 type Page = 'overview' | 'keymap' | 'lighting' | 'macros' | 'profiles';
 type DeviceState = {layers: number[][]; lighting: LightingState; macros: number[]; macroCount: number; macroCapacity: number};
@@ -123,10 +124,8 @@ function App() {
         }
       }
       if (!equalLighting(baseline.lighting, draft.lighting)) {
-        await connection.client.setMenuValue(3, 1, [draft.lighting.brightness]);
-        await connection.client.setMenuValue(3, 2, [draft.lighting.effect]);
-        await connection.client.setMenuValue(3, 3, [draft.lighting.speed]);
-        await connection.client.setMenuValue(3, 4, draft.lighting.color);
+        const lightingChanges = changedLightingCommands(baseline.lighting, draft.lighting);
+        for (const change of lightingChanges) await connection.client.setMenuValue(3, change.command, change.value);
         await connection.client.saveMenu(3);
         const [brightness, effect, speed, color] = await Promise.all([connection.client.getMenuValue(3, 1), connection.client.getMenuValue(3, 2), connection.client.getMenuValue(3, 3), connection.client.getMenuValue(3, 4, 2)]);
         const received: LightingState = {brightness: brightness[0], effect: effect[0], speed: speed[0], color: [color[0], color[1]]};
