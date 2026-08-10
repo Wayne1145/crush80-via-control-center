@@ -1,0 +1,34 @@
+# Node.js 工作流：在每次推送与 Pull Request 上验证静态控制中心可构建、可测试。
+name: 验证 Crush 80 控制中心
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  test-and-build:
+    name: 测试与构建
+    runs-on: ubuntu-latest
+    steps:
+      - name: 检出源码
+        uses: actions/checkout@v4
+
+      - name: 设置 Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: 安装锁定依赖
+        run: npm ci
+
+      - name: 运行单元测试
+        run: npm test
+
+      - name: 构建生产静态文件
+        run: npm run build
