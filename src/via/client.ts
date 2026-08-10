@@ -213,31 +213,34 @@ export class ViaHidClient {
 }
 
 export function assertCompatibleViaDevice(device: WebHidDevice, vendorId: number, productId: number) {
-  // VID/PID 是本项目拥有的官方 JSON 中可验证的硬边界；不匹配时绝不探测。
+  // VID/PID 与 VIA collection 同时匹配才允许发送命令。二者都是已观察到的事实，
+  // 而不是根据厂商或外观作出的协议猜测。
   if (device.vendorId !== vendorId || device.productId !== productId) {
-    throw new Error(`当前模式要求 0x${vendorId.toString(16).toUpperCase()}:0x${productId.toString(16).toUpperCase()}，但当前选择为 0x${device.vendorId.toString(16).toUpperCase()}:0x${device.productId.toString(16).toUpperCase()}。请取消后选择 Crush 80 的供应商定义 HID 接口。`);
+    throw new Error(`当前模式要求 0x${vendorId.toString(16).toUpperCase()}:0x${productId.toString(16).toUpperCase()}，但当前选择为 0x${device.vendorId.toString(16).toUpperCase()}:0x${device.productId.toString(16).toUpperCase()}。请取消后选择 Crush 80 的 VIA 接口。`);
   }
+  const status = viaCollectionStatus(device);
+  if (!status.matched) throw new Error('浏览器没有返回 Crush 80 的标准 VIA 接口（Usage Page 0xFF60 / Usage 0x61）。请重新点击连接；新的原生选择窗口将只列出该接口。');
 }
 
-/**
- * VIA 的常见 collection 是 0xFF60/0x61；但 Windows/WebHID 对复合 HID 设备
- * 暴露的 collections 可能不包含该顶层项。它只能作为诊断信息，不能在拥有
- * 官方 VID/PID JSON 的前提下误判设备。真正的协议确认由随后只读的
- * GET_PROTOCOL_VERSION 回包完成。
- */
+/** 返回 collection 诊断信息；实际连接仍以精确 VIA collection 为边界。 */
 export function viaCollectionStatus(device: WebHidDevice) {
   const collections = device.collections ?? [];
   const matched = collections.some(collection => collection.usagePage === 0xff60 && collection.usage === 0x61);
   return {matched, collections: collections.map(collection => ({usagePage: collection.usagePage, usage: collection.usage}))};
 }
 
-export async function requestAnyHidDevice() {
+export async function requestViaHidDevice() {
   const hid = (navigator as Navigator & {hid?: HidNavigator}).hid;
-  if (!hid) throw new Error('当前浏览器不支持 WebHID。请使用最新版 Chrome 或 Edge，并通过 localhost 打开本工具。');
-  const devices = await hid.requestDevice({filters: []});
+  if (!hid) throw new Error('当前浏览器不支持 WebHID。请使用最新版 Chrome 或 Edge，并通过 HTTPS 或 localhost 打开本工具。');
+  // 与 VIA 官方应用相同：只请求标准 VIA vendor collection，避免普通键盘接口
+  // 被浏览器授予后再向其发送报告，导致 Failed to write the report。
+  const devices = await hid.requestDevice({filters: [{usagePage: 0xff60, usage: 0x61}]});
   if (!devices[0]) throw new Error('未选择设备。');
   return devices[0];
 }
+
+/** 向后兼容旧调用名；实际只会请求标准 VIA HID collection。 */
+export const requestAnyHidDevice = requestViaHidDevice;
 
 export function observeHidDisconnect(client: ViaHidClient, callback: () => void) {
   const hid = (navigator as Navigator & {hid?: HidNavigator}).hid;

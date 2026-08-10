@@ -28,11 +28,19 @@ class FakeDevice implements WebHidDevice {
 }
 
 describe('VIA WebHID 安全边界', () => {
-  it('VID/PID 不匹配时在发送命令前拒绝；缺少 collection 仅记录诊断，不误拒官方设备', () => {
+  it('只请求 VIA 供应商 collection，避免普通键盘接口被授权后写入失败', async () => {
+    const requestDevice = vi.fn().mockResolvedValue([]);
+    Object.defineProperty(navigator, 'hid', {configurable: true, value: {requestDevice}});
+    const {requestViaHidDevice} = await import('../src/via/client');
+    await expect(requestViaHidDevice()).rejects.toThrow(/未选择设备/);
+    expect(requestDevice).toHaveBeenCalledWith({filters: [{usagePage: 0xff60, usage: 0x61}]});
+  });
+
+  it('VID/PID 或 VIA collection 不匹配时，发送命令前拒绝', () => {
     const device = new FakeDevice();
     expect(() => assertCompatibleViaDevice(device, 0x320f, 0x5055)).not.toThrow();
     device.collections = [{usagePage: 1, usage: 6}];
-    expect(() => assertCompatibleViaDevice(device, 0x320f, 0x5055)).not.toThrow();
+    expect(() => assertCompatibleViaDevice(device, 0x320f, 0x5055)).toThrow(/标准 VIA 接口/);
     expect(viaCollectionStatus(device)).toEqual({matched: false, collections: [{usagePage: 1, usage: 6}]});
     expect(() => assertCompatibleViaDevice(device, 0x320f, 0x5088)).toThrow(/当前模式要求/);
   });
