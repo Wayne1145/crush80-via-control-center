@@ -5,7 +5,7 @@ import './styles.css';
 import usbDefinition from '../public/definitions/crush80-rgb-usb.json';
 import receiverDefinition from '../public/definitions/crush80-rgb-2.4g.json';
 import {type ConnectionMode, normalizeDefinition} from './via/definition';
-import {assertCompatibleViaDevice, observeHidDisconnect, requestAnyHidDevice, ViaHidClient} from './via/client';
+import {assertCompatibleViaDevice, observeHidDisconnect, requestAnyHidDevice, ViaHidClient, viaCollectionStatus} from './via/client';
 import {parseOfficialLayout, type KeyboardKey} from './via/layout';
 import {customKeycodeOptions, keycodeOptionsForProtocol, labelForKeycode, macroBasicKeyDictionary, macroKeycodeOptions, type KeycodeOption} from './via/keycodes';
 import {byteToKeyMap, parseMacroBytes, serializeMacroBytes, type MacroStep} from './via/macros';
@@ -88,14 +88,18 @@ function App() {
       const definition = mode === 'usb' ? usbDefinition : receiverDefinition;
       const normalized = normalizeDefinition(definition);
       assertCompatibleViaDevice(device, normalized.vendorId, normalized.productId);
+      const collection = viaCollectionStatus(device);
       const client = new ViaHidClient(device);
+      // 官方 VID/PID 匹配后，使用只读标准 VIA 探测作为最终协议判据。
+      // 某些 Windows 复合 HID 暴露不会给 WebHID 返回顶层 0xFF60/0x61 collection，
+      // 因此 collection 仅记为诊断，不再造成“不是这个设备”的误拦截。
       const protocol = await client.protocolVersion();
       if (protocol < 7) throw new Error(`设备报告 VIA 协议版本 ${protocol}，不属于本工具支持的标准 VIA 范围。`);
       const layerCount = await client.layerCount(protocol);
       if (layerCount < 1 || layerCount > 16) throw new Error(`设备报告了异常 Layer 数：${layerCount}。已停止，不会写入。`);
       const qmkKeycodesVersion = protocol >= 13 ? await client.qmkKeycodesVersion() : undefined;
       if (protocol >= 13 && qmkKeycodesVersion !== 0x00000008) throw new Error(`设备返回未受当前工具支持的 QMK 键码版本 0x${qmkKeycodesVersion?.toString(16).padStart(8,'0')}；已停止，不会写入。`);
-      setNotice('正在从键盘读取键位、官方灯光菜单和宏缓冲区；此过程只读，不会修改设备。');
+      setNotice(`正在从键盘读取键位、官方灯光菜单和宏缓冲区；此过程只读，不会修改设备。${collection.matched ? ' 已识别 VIA collection。' : ' 浏览器未暴露标准 VIA collection；将以只读协议回包完成兼容性确认。'}`);
       const state = await loadState(client, protocol, layerCount);
       setConnection({mode, productName: device.productName || definition.name, protocol, qmkKeycodesVersion, layers: layerCount, client, definition, keys: parseOfficialLayout(definition)});
       setBaseline(state); setDraft(cloneState(state)); setSelectedLayer(0); setSelectedKey(parseOfficialLayout(definition)[0]?.id ?? '0:0'); setPage('overview');

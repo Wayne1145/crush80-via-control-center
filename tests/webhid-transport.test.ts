@@ -1,5 +1,5 @@
 import {describe, expect, it, vi} from 'vitest';
-import {assertCompatibleViaDevice, VIA, ViaHidClient, type HidInputReportEvent, type WebHidDevice} from '../src/via/client';
+import {assertCompatibleViaDevice, VIA, ViaHidClient, viaCollectionStatus, type HidInputReportEvent, type WebHidDevice} from '../src/via/client';
 
 class FakeDevice implements WebHidDevice {
   opened = false;
@@ -28,11 +28,13 @@ class FakeDevice implements WebHidDevice {
 }
 
 describe('VIA WebHID 安全边界', () => {
-  it('发送任何命令前校验 VID/PID 与 VIA collection', () => {
+  it('VID/PID 不匹配时在发送命令前拒绝；缺少 collection 仅记录诊断，不误拒官方设备', () => {
     const device = new FakeDevice();
     expect(() => assertCompatibleViaDevice(device, 0x320f, 0x5055)).not.toThrow();
     device.collections = [{usagePage: 1, usage: 6}];
-    expect(() => assertCompatibleViaDevice(device, 0x320f, 0x5055)).toThrow(/VIA HID 接口/);
+    expect(() => assertCompatibleViaDevice(device, 0x320f, 0x5055)).not.toThrow();
+    expect(viaCollectionStatus(device)).toEqual({matched: false, collections: [{usagePage: 1, usage: 6}]});
+    expect(() => assertCompatibleViaDevice(device, 0x320f, 0x5088)).toThrow(/当前模式要求/);
   });
 
   it('以 32 字节、报告 ID 0 发送，并匹配完整请求回显', async () => {
